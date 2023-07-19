@@ -1,0 +1,176 @@
+# Membuat List Data, serta melakukan pengecekan kelengkapan data
+def namafile():
+    global tn, kosong, B13, lon, lat, datafinal
+    kosong = np.zeros((1000,6))
+    datafinal = np.zeros((sizetime,16))
+
+    #Definisi Indeks dan Matriks Bantu
+    tn=0
+    print("===================================================")
+    print("==           Reading NC Satellite Data           ==")
+    print("===================================================")
+    for yy in range(tahun1,tahun2+1):
+        thn=str(yy)
+        # Membuat Angka Daftar Bulan
+        for mm in range(bulan1,bulan2+1):
+            if mm<10:
+                bln='0'+str(mm)
+            else:
+                bln=str(mm)
+
+            # Membuat Angka Daftar Tanggal
+            for dd in range(tanggal1,tanggal2+1):
+                if dd<10:
+                    tgl='0'+str(dd)
+                else:
+                    tgl=str(dd)
+
+                # Membuat Angka Daftar Jam
+                for hh in range(jam1,jam2+1):
+                    if hh<10:
+                        jam='0'+str(hh)
+                    else:
+                        jam=str(hh)
+
+                    # Membuat Angka Daftar Menit
+                    for nn in range(menit1,menit2+10,10):
+                        if nn<10:
+                            mnt='0'+str(nn)
+                        else:
+                            mnt=str(nn)
+
+                        # Membuat daftar Band
+                        n=len(band)
+                        for bb in range(0,n):
+                            if band[bb]<10:
+                                bnd='0'+str(band[bb])
+                            else:
+                                bnd=str(band[bb])
+
+                            # Membuat list nama file yang akan dibuka
+                            filesat = dirfile+header1+bnd+header2+thn+bln+tgl+jam+mnt+'.nc'
+
+                            datafinal[tn,0]=thn
+                            datafinal[tn,1]=bln
+                            datafinal[tn,2]=tgl
+                            datafinal[tn,3]=jam
+                            datafinal[tn,4]=mnt
+
+
+                            readsatelit(filesat,bnd,thn,bln,tgl,jam,mnt,bb)
+
+
+                        tn=tn+1  #Pengulangan untuk setiap waktu
+
+
+
+# Read Data Satelit dan Cropping
+def readsatelit(filesat,bnd,thn,bln,tgl,jam,mnt,bb):
+    global B13, lon, lat, datafinal
+    #Definisi Matriks untuk Band
+    isfile = os.path.isfile(filesat)
+    tk=0
+    #Storage data yang kosong
+    if isfile == False:
+        kosong[tk,0]=int(bnd)
+        kosong[tk,1]=int(thn)
+        kosong[tk,2]=int(bln)
+        kosong[tk,3]=int(tgl)
+        kosong[tk,4]=int(jam)
+        kosong[tk,5]=int(mnt)
+        tk=tk+1
+    else:
+        #Pengolahan data tersedia
+        if band[bb]==13:
+            try:
+                var='IR'
+                data=nc(filesat)
+                datafix=(data.variables[var][:])
+                B13=(np.array((datafix)))
+
+                var='longitude'
+                datafix=(data.variables[var][:])
+                lon=np.array((datafix))
+
+                var='latitude'
+                datafix=(data.variables[var][:])
+                lat=(np.array((datafix)))
+
+                lonindex=min(range(len(lon)), key=lambda ni: abs(lon[ni]-lontarget))
+                latindex=min(range(len(lat)), key=lambda nj: abs(lat[nj]-lattarget))
+
+                datafinal[tn,5]=B13[0,latindex,lonindex] #Tmin atau titik yang dievaluasi
+                datafinal[tn,6]=B13[0,latindex-2*delresol,lonindex]
+                datafinal[tn,7]=B13[0,latindex-delresol,lonindex]
+                datafinal[tn,8]=B13[0,latindex+delresol,lonindex]
+                datafinal[tn,9]=B13[0,latindex+2*delresol,lonindex]
+                datafinal[tn,10]=B13[0,latindex,lonindex-2*delresol]
+                datafinal[tn,11]=B13[0,latindex,lonindex-delresol]
+                datafinal[tn,12]=B13[0,latindex,lonindex+delresol]
+                datafinal[tn,13]=B13[0,latindex,lonindex+2*delresol]
+
+            except:
+                pass
+        print('Success read Himawari 8 Band '+ bnd+' on '+thn+'-'+bln+'-'+tgl+' '+jam+'.'+mnt)
+
+
+def cst():
+    global datafinal
+    for tp in range(0,sizetime):
+        S =0.125*(datafinal[tp,6]+datafinal[tp,7]+datafinal[tp,8]+datafinal[tp,9]+datafinal[tp,10]+datafinal[tp,11]+datafinal[tp,12]+datafinal[tp,13]-8*datafinal[tp,5])
+        Th = math.exp((datafinal[tp,5]-207)*0.0826)
+        A = math.exp(15.27+((-0.0492)*datafinal[tp,5]))
+        datafinal[tp,15] = S
+
+        if S>=Th:
+            datafinal[tp,14]=(A/202.1243)*26
+        elif datafinal[tp,5]==0:
+            datafinal[tp,14]=0
+        else:
+            datafinal[tp,14]=(A/202.1243)*0.8
+
+    np.savetxt(dirsave+'cst.csv', datafinal, fmt='%10.3f', delimiter=";")
+
+from google.colab import drive
+drive.mount('/content/gdrive')
+!pip install netCDF4
+
+Drive already mounted at /content/gdrive; to attempt to forcibly remount, call drive.mount("/content/gdrive", force_remount=True).
+Looking in indexes: https://pypi.org/simple, https://us-python.pkg.dev/colab-wheels/public/simple/
+Requirement already satisfied: netCDF4 in /usr/local/lib/python3.10/dist-packages (1.6.3)
+Requirement already satisfied: cftime in /usr/local/lib/python3.10/dist-packages (from netCDF4) (1.6.2)
+Requirement already satisfied: numpy in /usr/local/lib/python3.10/dist-packages (from netCDF4) (1.22.4)
+
+from netCDF4 import Dataset as nc
+import numpy as np
+import os
+import math
+
+# Definisi waktu, band, lokasi, dan header
+dirfile     ='/content/gdrive/My Drive/Skripsi/Desember_2019/'           # directory data nc, bagian akhirnya harus garis miring (/)
+dirsave     ='/content/gdrive/My Drive/Hasil_Running/'            # directory output excel, bagian akhirnya harus garis miring (/)
+tahun1      = 2019;                                   # tahun awal
+tahun2      = 2019;                                   # tahun akhir
+bulan1      = 12;                                     # bulan awal
+bulan2      = 12;                                     # bulan akhir
+tanggal1    = 1;                                     # tanggal awal
+tanggal2    = 31;                                     # tanggal akhir
+jam1        = 0;                                     # jam awal
+jam2        = 23;                                     # jam akhir
+menit1      = 0;                                     # menit awal
+menit2      = 50;                                     # menit akhir
+band        = np.array([13]);                # band yang digunakan
+header1     = 'H08_B';                                # header
+header2     = '_Indonesia_';
+
+# Menentukan titik estimasi
+resol       = 0.1;               # resolusi data satelit yang digunakan adalah 0.1 derajat, resolusi ini menyesuaikan ukuran grid dari data GSMaP dan GPM-IMERG
+delresol    = int(0.05/resol)
+lontarget   = 128.095
+lattarget   = -3.711
+
+sizetime=int(((((jam2-jam1+1)*(((menit2-menit1)/10)+1))*(tanggal2-tanggal1+1))*(bulan2-bulan1+1))*(tahun2-tahun1+1))
+
+
+namafile()
+cst()
